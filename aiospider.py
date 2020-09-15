@@ -292,4 +292,5 @@ if __name__ == "__main__":
             for i in ls:
                 yield {'url': i}
 
+
     MySpider.start({'LOG_LEVEL': 'DEBUG'})
