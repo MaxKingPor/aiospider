@@ -192,7 +192,7 @@ class Core:
                 result = await func(resp, meta=req.meta)
                 if isinstance(result, Request):
                     await self.queue.put(result)
-                else:
+                elif result is not None:
                     self.pool.submit(self.spider.parse_item, result, req.meta)
 
         async def mod2():
@@ -200,7 +200,7 @@ class Core:
                 async for i in func(resp, meta=req.meta):
                     if isinstance(i, Request):
                         await self.queue.put(i)
-                    else:
+                    elif i is not None:
                         self.pool.submit(self.spider.parse_item, i, req.meta)
 
         while req := await self.queue.get():
@@ -213,8 +213,8 @@ class Core:
                     await mod1()
                 elif inspect.isasyncgenfunction(func):
                     await mod2()
-            except aiohttp.ClientError:
-                if req.count >= 5:
+            except (aiohttp.ClientError, asyncio.exceptions.TimeoutError):
+                if req.count <= 5:
                     req.count += 1
                     self.logger.warning(f'Retry {req}')
                     await self.queue.put(req)

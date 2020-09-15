@@ -1,9 +1,9 @@
-> 基于asyncio aiohttp 开发的类scrapy爬虫架构
+> 基于asyncio+aiohttp 开发的类scrapy爬虫架构 
+>
+> 开1024个携程 网速限制1Mbps tps 约为1.15
 
 # 基本使用
-``` python
-import aiohttp
-import typing
+```
 from lxml import etree
 from aiospider import Spider
 
@@ -16,7 +16,7 @@ class MySpider(Spider):
     def parse_item(self, item, meta):
         self.logger.debug(f'item:{item}, meta:{meta}')
 
-    async def parse(self, response: aiohttp.ClientResponse, meta: typing.Any):
+    async def parse(self, response, meta):
         root = etree.HTML(await response.text())
         ls = root.xpath("//a/@href")
         for i in ls:
@@ -24,3 +24,5 @@ class MySpider(Spider):
 
 MySpider.start({'LOG_LEVEL': 'DEBUG'})
 ```
+
+> myspider 是用aiospider写的一个小项目
