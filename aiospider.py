@@ -275,23 +275,21 @@ class Core:
 
 
 if __name__ == "__main__":
+    from lxml import etree
+
+
     class MySpider(Spider):
-        name = 'm mp'
         start_urls = [
             'https://home.firefoxchina.cn/',
-            'https://home.firefoxchina.cn/'
-
         ]
 
         def parse_item(self, item, meta):
-            self.logger.info(f"{(item, meta)}")
+            self.logger.debug(f'item:{item}, meta:{meta}')
 
-        async def parse(self, response, meta):
-            url = response.url
-            yield {'url': url}
-            raise RuntimeError('test')
+        async def parse(self, response: aiohttp.ClientResponse, meta: typing.Any):
+            root = etree.HTML(await response.text())
+            ls = root.xpath("//a/@href")
+            for i in ls:
+                yield {'url': i}
 
-
-    a = {'JOB_COUNT': 20}
-    a = MySpider.start(a)
-    exit(a)
+    MySpider.start({'LOG_LEVEL': 'DEBUG'})
