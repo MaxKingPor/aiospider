@@ -7,6 +7,7 @@ import asyncio
 import collections.abc
 import json
 import importlib
+import hashlib
 from concurrent.futures import ThreadPoolExecutor
 
 import aiohttp
@@ -30,7 +31,7 @@ class HandlerFilterError(Exception):
     def __init__(self, name, value):
         self.name = name
         self.value = value
-        super(HandlerFilterError, self).__init__('')
+        super(HandlerFilterError, self).__init__(f'Filter {name!s} {value!s}')
 
 
 class SpiderHandler:
@@ -53,9 +54,10 @@ class FilterHandler(SpiderHandler):
 
     async def process_request(self, request: 'Request') -> typing.Union['Request', None]:
         url = request.url
-        if not isinstance(url, URL):
-            url = URL(url)
-        hx = url.__hash__()
+        if not isinstance(url, str):
+            url = str(url)
+        md5 = hashlib.md5(bytes(url, 'utf-8'))
+        hx = md5.hexdigest()
         if hx in self.filters and request.filter or request.count > 5:
             return None
         self.filters.add(hx)
