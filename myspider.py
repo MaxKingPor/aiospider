@@ -7,24 +7,20 @@ import aiohttp
 from yarl import URL
 from lxml import etree
 
-from aiospider import Spider, Request
+from aiospider import Spider, Request, SpiderHandler
 
 
 class MySpider(Spider):
     name = 'test'
     start_urls = [
-        'https://www.187bfeee594e.com/tupian/list-%E8%87%AA%E6%8B%8D%E5%81%B7%E6%8B%8D.html',
-        'https://www.187bfeee594e.com/tupian/list-%E4%BA%9A%E6%B4%B2%E8%89%B2%E5%9B%BE.html',
-        'https://www.187bfeee594e.com/tupian/list-%E6%AC%A7%E7%BE%8E%E8%89%B2%E5%9B%BE.html',
-        'https://www.187bfeee594e.com/tupian/list-%E7%BE%8E%E8%85%BF%E4%B8%9D%E8%A2%9C.html',
-        'https://www.187bfeee594e.com/tupian/list-%E6%B8%85%E7%BA%AF%E5%94%AF%E7%BE%8E.html',
-        'https://www.187bfeee594e.com/tupian/list-%E4%B9%B1%E4%BC%A6%E7%86%9F%E5%A5%B3.html',
-        'https://www.187bfeee594e.com/tupian/list-%E5%8D%A1%E9%80%9A%E5%8A%A8%E6%BC%AB.html',
+        'https://mmp/tupian/list-%E8%87%AA%E6%8B%8D%E5%81%B7%E6%8B%8D.html',
+        'https://mmp/tupian/list-%E4%BA%9A%E6%B4%B2%E8%89%B2%E5%9B%BE.html',
+        'https://mmp/tupian/list-%E6%AC%A7%E7%BE%8E%E8%89%B2%E5%9B%BE.html',
+        'https://mmp/tupian/list-%E7%BE%8E%E8%85%BF%E4%B8%9D%E8%A2%9C.html',
+        'https://mmp/tupian/list-%E6%B8%85%E7%BA%AF%E5%94%AF%E7%BE%8E.html',
+        'https://mmp/tupian/list-%E4%B9%B1%E4%BC%A6%E7%86%9F%E5%A5%B3.html',
+        'https://mmp/tupian/list-%E5%8D%A1%E9%80%9A%E5%8A%A8%E6%BC%AB.html',
     ]
-
-    async def start_requests(self):
-        for i in self.start_urls:
-            yield Request(URL(i).with_host('www.187bfeee594e.com'))
 
     async def parse(self, response: aiohttp.ClientResponse, meta: typing.Any):
         root = etree.HTML(await response.text())
@@ -46,8 +42,17 @@ class MySpider(Spider):
         self.logger.info(f'name: {item["name"]}, imgs:{item["imgs"]}')
 
 
+class MyHandler(SpiderHandler):
+    async def process_request(self, request) -> 'Request':
+        request.url = URL(request.url).with_host('www.187bfeee594e.com')
+        return request
+
+
 s = {
     'LOG_FILE': 'test.log',
     'JOB_COUNT': 1024,
+    'SPIDER_HANDLERS': {
+        MyHandler: 10
+    }
 }
 MySpider.start(s)
