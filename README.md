@@ -3,7 +3,7 @@
 > 开1024个携程 网速限制1Mbps 每秒请求约为1.15
 
 # 基本使用
-```
+``` python
 from lxml import etree
 from aiospider import Spider
 
