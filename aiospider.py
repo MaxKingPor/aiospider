@@ -50,7 +50,7 @@ class FilterHandler(SpiderHandler):
         super(FilterHandler, self).__init__(*args, **kwargs)
         self.filters = set()
 
-    async def process_request(self, request: 'Request') -> 'Request':
+    async def process_request(self, request: 'Request') -> typing.Union['Request', None]:
         url = request.url
         if not isinstance(url, URL):
             url = URL(url)
@@ -169,13 +169,13 @@ class Settings(collections.abc.MutableMapping):
 
 
 class Request:
-    def __init__(self, url, method='GET', callback=None, meta=None, filter=True, **kwargs):
+    def __init__(self, url, method='GET', callback=None, meta=None, on_filter=True, **kwargs):
         self.count = 0
         self.meta = meta
         self.url = url
         self.method = method
         self.callback = callback
-        self.filter = filter
+        self.filter = on_filter
         self.kwargs = kwargs
 
     def __str__(self):
