@@ -45,8 +45,7 @@ class MySpider(Spider):
 class MyHandler(SpiderHandler):
     async def process_request(self, request: Request) -> Request:
         if request.url.host != 'www.187bfeee594e.com':
-            pass
-            # request.url = request.url.with_host('www.187bfeee594e.com')
+            request.url = request.url.with_host('www.187bfeee594e.com')
         return request
 
 
