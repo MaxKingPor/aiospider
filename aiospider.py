@@ -20,23 +20,24 @@ default_settings = {
     'LOG_LEVEL': "INFO",
     'LOG_FORMAT': '%(asctime)s [%(name)s] %(levelname)s: %(message)s',
     'LOG_DATEFORMAT': '%Y-%m-%d %H:%M:%S',
-    'SpiderHandlers'.upper(): {
+    'DEFAULT_SPIDER_HANDLERS': {
         'aiospider.FilterHandler': 200,
     }
 }
 
 
-class HandlerFilter(Exception):
+class HandlerFilterError(Exception):
     def __init__(self, name, value):
         self.name = name
         self.value = value
-        super(HandlerFilter, self).__init__('')
+        super(HandlerFilterError, self).__init__('')
 
 
 class SpiderHandler:
     def __init__(self, spider, settings):
         self.spider = spider
         self.settings = settings
+        self.logger = logging.getLogger(f'{spider.name}.{self.__class__.__name__}')
 
     async def process_request(self, request) -> 'Request':
         return request
@@ -65,9 +66,11 @@ class MainHandler(SpiderHandler):
     def __init__(self, spider, settings):
         super().__init__(spider, settings)
         self.handlers = []
-        self._init_handlers(self.settings.get('SpiderHandlers'.upper()))
+        self._init_handlers()
 
-    def _init_handlers(self, handlers: dict):
+    def _init_handlers(self):
+        handlers = self.settings.get('DEFAULT_SPIDER_HANDLERS')
+        handlers.update(self.settings.get('SPIDER_HANDLERS'))
         handlers = sorted(handlers.items(), key=lambda x: x[1], reverse=True)
         for k, v in handlers:
             if isinstance(k, str):
@@ -86,7 +89,7 @@ class MainHandler(SpiderHandler):
         for i in self.handlers:
             request = await i.process_request(request)
             if request is None or not isinstance(request, Request):
-                raise HandlerFilter('request', base)
+                raise HandlerFilterError('request', base)
         return request
 
     async def process_response(self, response):
@@ -94,7 +97,7 @@ class MainHandler(SpiderHandler):
         for i in self.handlers:
             response = await i.process_response(response)
             if response is None:
-                raise HandlerFilter('response', base)
+                raise HandlerFilterError('response', base)
         return response
 
 
@@ -299,7 +302,7 @@ class Core:
                 await self.queue.put(req)
             except asyncio.exceptions.CancelledError:
                 raise
-            except HandlerFilter as e:
+            except HandlerFilterError as e:
                 self.logger.info(f'Filter {e.name} {e.value}')
             except BaseException:
                 self.logger.exception('')
