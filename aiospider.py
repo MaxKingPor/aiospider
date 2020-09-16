@@ -53,14 +53,18 @@ class FilterHandler(SpiderHandler):
         self.filters = set()
 
     async def process_request(self, request: 'Request') -> typing.Union['Request', None]:
-        url = request.url
-        if not isinstance(url, str):
-            url = str(url)
-        md5 = hashlib.md5(bytes(url, 'utf-8'))
-        hx = md5.hexdigest()
-        if hx in self.filters and request.filter or request.count > 5:
+        if request.count >= 5:
             return None
-        self.filters.add(hx)
+        if request.filter:
+            url = request.url
+            if not isinstance(url, str):
+                url = str(url)
+            md5 = hashlib.md5(bytes(url, 'utf-8'))
+            md5.update(bytes(f'{request!s}', 'utf-8'))
+            hx = md5.hexdigest()
+            if hx in self.filters:
+                return None
+            self.filters.add(hx)
         return request
 
 
@@ -177,7 +181,7 @@ class Request:
     def __init__(self, url, method='GET', callback=None, meta=None, on_filter=True, **kwargs):
         self.count = 0
         self.meta = meta
-        self.url = url
+        self.url = URL(url)
         self.method = method
         self.callback = callback
         self.filter = on_filter
@@ -305,7 +309,7 @@ class Core:
             except asyncio.exceptions.CancelledError:
                 raise
             except HandlerFilterError as e:
-                self.logger.info(f'Filter {e.name} {e.value}')
+                self.logger.info(f'Filtered {e.name} {e.value}')
             except BaseException:
                 self.logger.exception('')
                 raise
