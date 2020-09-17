@@ -35,8 +35,9 @@ class MySpider(Spider):
 
     async def parse2(self, response: aiohttp.ClientResponse, meta: typing.Any):
         root = etree.HTML(await response.text())
-        meta['imgs'] = root.xpath('//div[@class="content"]/img/@src')
-        yield meta
+        meta['imgs'] = root.xpath('//div[@class="content"]/img')
+        if meta['imgs']:
+            yield meta
 
     def parse_item(self, item, meta):
         self.logger.info(f'name: {item["name"]}, imgs:{item["imgs"]}')

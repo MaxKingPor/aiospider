@@ -1,6 +1,7 @@
 import abc
 import copy
 import logging
+import threading
 import typing
 import inspect
 import asyncio
@@ -13,21 +14,24 @@ from concurrent.futures import ThreadPoolExecutor
 import aiohttp
 from yarl import URL
 
-
 default_settings = {
     'JOB_COUNT': 20,
-    'LOG_ENABLED': True,
+    'LOG_CONSOLE': True,
     'LOG_ENCODING': 'utf-8',
     'LOG_LEVEL': "INFO",
     'LOG_FORMAT': '%(asctime)s [%(name)s] %(levelname)s: %(message)s',
     'LOG_DATEFORMAT': '%Y-%m-%d %H:%M:%S',
     'DEFAULT_SPIDER_HANDLERS': {
-        'aiospider.FilterHandler': 200,
+        f'{__name__}.FilterHandler': 200,
     }
 }
 
 
-class HandlerFilterError(Exception):
+class HandlerError(Exception):
+    pass
+
+
+class HandlerFilterError(HandlerError):
     def __init__(self, name, value):
         self.name = name
         self.value = value
@@ -43,8 +47,11 @@ class SpiderHandler:
     async def process_request(self, request) -> 'Request':
         return request
 
-    async def process_response(self, response) -> aiohttp.ClientResponse:
+    async def process_response(self, response, meta) -> aiohttp.ClientResponse:
         return response
+
+    def process_item(self, item, meta) -> typing.Any:
+        return item
 
 
 class FilterHandler(SpiderHandler):
@@ -71,12 +78,13 @@ class FilterHandler(SpiderHandler):
 class MainHandler(SpiderHandler):
     def __init__(self, spider, settings):
         super().__init__(spider, settings)
+        self.lock = threading.RLock()
         self.handlers = []
         self._init_handlers()
 
     def _init_handlers(self):
         handlers = self.settings.get('DEFAULT_SPIDER_HANDLERS')
-        handlers.update(self.settings.get('SPIDER_HANDLERS'))
+        handlers.update(self.settings.get('SPIDER_HANDLERS', {}))
         handlers = sorted(handlers.items(), key=lambda x: x[1], reverse=True)
         for k, v in handlers:
             if isinstance(k, str):
@@ -95,16 +103,26 @@ class MainHandler(SpiderHandler):
         for i in self.handlers:
             request = await i.process_request(request)
             if request is None or not isinstance(request, Request):
+                self.logger.warning(f'Filter request {request}')
                 raise HandlerFilterError('request', base)
         return request
 
-    async def process_response(self, response):
+    async def process_response(self, response, meta):
         base = response
         for i in self.handlers:
-            response = await i.process_response(response)
+            response = await i.process_response(response, meta)
             if response is None:
                 raise HandlerFilterError('response', base)
         return response
+
+    def process_item(self, item, meta) -> typing.Any:
+        # item 解析是放入线程池中的所以要加上锁
+        with self.lock:
+            for i in self.handlers:
+                item = i.process_item(item, meta)
+                if item is None:
+                    return
+            self.spider.parse_item(item, meta)
 
 
 class SettingsAttr:
@@ -211,7 +229,6 @@ class Spider(metaclass=abc.ABCMeta):
     def parse(self, response: aiohttp.ClientResponse, meta: typing.Any):
         ...
 
-    @abc.abstractmethod
     def parse_item(self, item, meta):
         ...
 
@@ -251,7 +268,8 @@ class Core:
 
     def _init_logger(self):
         logger = logging.getLogger(self.spider.name)
-        logger.setLevel(self.settings.get('LOG_LEVEL'))
+        leve = self.settings.get('LOG_LEVEL')
+        logger.setLevel(leve)
         formatter = logging.Formatter(
             fmt=self.settings.get('LOG_FORMAT'),
             datefmt=self.settings.get('LOG_DATEFORMAT')
@@ -259,7 +277,7 @@ class Core:
 
         def _do_handler(hd):
             hd.setFormatter(formatter)
-            hd.setLevel(self.settings.get('LOG_LEVEL'))
+            hd.setLevel(leve)
             logger.addHandler(hd)
 
         filename = self.settings.get('LOG_FILE')
@@ -267,49 +285,52 @@ class Core:
             encoding = self.settings.get('LOG_ENCODING')
             handler = logging.FileHandler(filename, encoding=encoding)
             _do_handler(handler)
-        if self.settings.get('LOG_ENABLED'):
+        if self.settings.get('LOG_CONSOLE'):
             handler = logging.StreamHandler()
             _do_handler(handler)
 
-    async def job(self, session: aiohttp.ClientSession):
-        req: Request
-
+    async def start_parse(self, req, resp):
         async def mod1():
             result = await func(resp, meta=req.meta)
             if isinstance(result, Request):
                 await self.queue.put(result)
             elif result is not None:
-                self.pool.submit(self.spider.parse_item, result, req.meta)
+                self.pool.submit(self.spider_handler.process_item, result, req.meta)
 
         async def mod2():
             async for i in func(resp, meta=req.meta):
                 if isinstance(i, Request):
                     await self.queue.put(i)
                 elif i is not None:
-                    self.pool.submit(self.spider.parse_item, i, req.meta)
+                    self.pool.submit(self.spider_handler.process_item, i, req.meta)
+
+        func = req.callback
+        if func is None:
+            func = self.spider.parse
+        if inspect.iscoroutinefunction(func):
+            await mod1()
+        elif inspect.isasyncgenfunction(func):
+            await mod2()
+        else:
+            raise TypeError(f'{func} 类型暂不支持')
+
+    async def job(self, session: aiohttp.ClientSession):
+        req: Request
 
         while req := await self.queue.get():
-            func = req.callback
-            if func is None:
-                func = self.spider.parse
             try:
                 req = await self.spider_handler.process_request(req)
                 self.logger.info(f"start {req}")
                 async with session.request(req.method, req.url, **req.kwargs) as resp:
-                    resp = await self.spider_handler.process_response(resp)
-                    if inspect.iscoroutinefunction(func):
-                        await mod1()
-                    elif inspect.isasyncgenfunction(func):
-                        await mod2()
-                    else:
-                        raise TypeError(f'{func} 类型暂不支持')
+                    resp = await self.spider_handler.process_response(resp, req.meta)
+                    await self.start_parse(req, resp)
             except (aiohttp.ClientError, asyncio.exceptions.TimeoutError):
                 req.count += 1
                 await self.queue.put(req)
             except asyncio.exceptions.CancelledError:
                 raise
-            except HandlerFilterError as e:
-                self.logger.info(f'Filtered {e.name} {e.value}')
+            except HandlerError:
+                pass
             except BaseException:
                 self.logger.exception('')
                 raise
