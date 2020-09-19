@@ -1,14 +1,14 @@
 import abc
+import asyncio
+import collections.abc
 import copy
+import hashlib
+import importlib
+import inspect
+import json
 import logging
 import threading
 import typing
-import inspect
-import asyncio
-import collections.abc
-import json
-import importlib
-import hashlib
 from concurrent.futures import ThreadPoolExecutor
 
 import aiohttp
@@ -78,7 +78,6 @@ class FilterHandler(SpiderHandler):
 class MainHandler(SpiderHandler):
     def __init__(self, spider, settings):
         super().__init__(spider, settings)
-        self.lock = threading.RLock()
         self.handlers = []
         self._init_handlers()
 
@@ -116,13 +115,11 @@ class MainHandler(SpiderHandler):
         return response
 
     def process_item(self, item, meta) -> typing.Any:
-        # item 解析是放入线程池中的所以要加上锁
-        with self.lock:
-            for i in self.handlers:
-                item = i.process_item(item, meta)
-                if item is None:
-                    return
-            self.spider.parse_item(item, meta)
+        for i in self.handlers:
+            item = i.process_item(item, meta)
+            if item is None:
+                return
+        self.spider.parse_item(item, meta)
 
 
 class SettingsAttr:
