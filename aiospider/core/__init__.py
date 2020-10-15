@@ -46,19 +46,27 @@ class Core:
             _do_handler(handler)
 
     async def start_parse(self, req, resp):
+        def process_item_task_done(task: asyncio.Future):
+            if not task.cancelled() and (exc := task.exception()):
+                self.logger.exception("process_item error:", exc_info=exc)
+
         async def mod1():
             result = await func(resp, meta=req.meta)
             if isinstance(result, Request):
                 await self.queue.put(result)
             elif result is not None:
-                self.pool.submit(self.spider_handler.process_item, result, req.meta)
+                task = self.loop.run_in_executor(self.pool, self.spider_handler.process_item, result, req.meta)
+                task.add_done_callback(process_item_task_done)
+                # self.pool.submit(self.spider_handler.process_item, result, req.meta)
 
         async def mod2():
             async for i in func(resp, meta=req.meta):
                 if isinstance(i, Request):
                     await self.queue.put(i)
                 elif i is not None:
-                    self.pool.submit(self.spider_handler.process_item, i, req.meta)
+                    task = self.loop.run_in_executor(self.pool, self.spider_handler.process_item, i, req.meta)
+                    task.add_done_callback(process_item_task_done)
+                    # self.pool.submit(self.spider_handler.process_item, i, req.meta)
 
         func = req.callback
         if func is None:
